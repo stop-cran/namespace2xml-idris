@@ -1,6 +1,8 @@
 module ConfigTransform
 
 import ConfigData
+import Data.NEList
+import NEListExtras
 
 %access export
 
@@ -22,7 +24,7 @@ nameTokenToEither : NameToken -> Either String Unit
 nameTokenToEither (TextNameToken text) = Left text
 nameTokenToEither SubstituteNameToken = Right ()
 
-valueTokenToEither : ValueToken -> Either String (List (List NameToken))
+valueTokenToEither : ValueToken -> Either String (NEList (NEList NameToken))
 valueTokenToEither (TextValueToken text) = Left text
 valueTokenToEither (ReferenceValueToken ref) = Right ref
 
@@ -31,11 +33,11 @@ substBundle : List NameToken -> (n ** RightCounter String Unit n)
 substBundle = foldr append (0 ** MkRightCounter) . map nameTokenToEither
 
 total
-refBundle : List ValueToken -> (n ** RightCounter String (List (List NameToken)) n)
+refBundle : List ValueToken -> (n ** RightCounter String (NEList (NEList NameToken)) n)
 refBundle = foldr append (0 ** MkRightCounter) . map valueTokenToEither
 
 total
-toValueList : RightCounter String (List (List NameToken)) n -> List ValueToken
+toValueList : RightCounter String (NEList (NEList NameToken)) n -> List ValueToken
 toValueList MkRightCounter = []
 toValueList (Left text xs) = TextValueToken text :: toValueList xs
 toValueList (Right ref xs) = ReferenceValueToken ref :: toValueList xs
@@ -48,8 +50,8 @@ concatenateTextTokens (ref@(ReferenceValueToken _) :: xs) = ref :: concatenateTe
 concatenateTextTokens (text@(TextValueToken _) :: xs@(ReferenceValueToken _ :: _)) = text :: concatenateTextTokens xs
 concatenateTextTokens (TextValueToken text1 :: TextValueToken text2 :: xs) = concatenateTextTokens $ TextValueToken (text1 ++ text2) :: xs
 
-isStar : List (List NameToken) -> Bool
-isStar = isCons . filter isSubstitute . join
+isStar : NEList (NEList NameToken) -> Bool
+isStar = isCons . filter isSubstitute . Data.NEList.toList . join
 
 keyMatch : ConfigLine -> ConfigLine -> Bool
 keyMatch (Payload key _ _ _) (Payload key' _ _ _) = key == key' && (not $ isStar key)

@@ -5,6 +5,8 @@ import ConfigData
 import ConfigParser
 import ConfigReader
 import ConfigTransform
+import Data.NEList
+import NEListExtras
 import System
 import MonadSwap
 

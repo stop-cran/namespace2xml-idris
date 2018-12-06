@@ -1,80 +1,55 @@
 module ConfigParser
 
+import Control.Monad.State
+import TParsec
+import TParsec.Running
 import ConfigData
-import Lightyear
-import Lightyear.Position
-import Lightyear.Core
-import Lightyear.Char
-import Lightyear.Strings
+import Data.NEList
+import NEListExtras
+import TParsecExtras
+
+%default total
+%access public export
 
 
-mutual
-    someTillFail : Parser a -> Parser (List a)
-    someTillFail p = do
-        x <- p
-        (x ::) <$> manyTillFail p
+nameChar : Parser' Char
+nameChar = (char '\\' `rand` anyCharOf "\\*.}") `alt` noneCharOf "*.=}\r\n"
 
-    manyTillFail : Parser a -> Parser (List a)
-    manyTillFail p = someTillFail p <|> pure []
+textNameToken : Parser' NameToken
+textNameToken = map (TextNameToken . nepack) (nelist nameChar)
 
-someCharsTillFail : Parser Char -> Parser String
-someCharsTillFail = map pack . someTillFail
+substituteNameToken : Parser' NameToken
+substituteNameToken = cmap SubstituteNameToken (char '*')
 
-whiteSpace : Parser ()
-whiteSpace = skip $ many $ oneOf " \t"
+name : Parser' (NEList (NEList NameToken))
+name = sepBy (nelist (substituteNameToken `alt` textNameToken)) (char '.')
 
-endOfLineWithSpaces : Parser Char
-endOfLineWithSpaces = whiteSpace *> endOfLine
+valueChar : Parser' Char
+valueChar = guardM id $ cmap Nothing (string "${") `alt` map Just (noneCharOf "*.}\r\n")
 
+textValueToken : Parser' ValueToken
+textValueToken = map (TextValueToken . nepack) (nelist valueChar)
 
--- Name
+referenceValueToken : Parser' ValueToken
+referenceValueToken = (string "${" `rand` map ReferenceValueToken name) `land` char '}'
 
-nameChar : Parser Char
-nameChar = char '\\' *> oneOf "\\*.}" <|> noneOf "*.=}\r\n"
+value : Parser' (NEList ValueToken)
+value = nelist $ referenceValueToken `alt` textValueToken
 
-textNameToken : Parser NameToken
-textNameToken = TextNameToken <$> someCharsTillFail nameChar
+payload : Parser' ConfigLine
+payload = map (\(name, val) => Payload name (toListMaybe val) "" 0) $
+          (name `land` char '=') `andopt` value
 
-substituteNameToken : Parser NameToken
-substituteNameToken = char '*' *> pure SubstituteNameToken
+comment : Parser' ConfigLine
+comment = ((spaces `optand` char '#') `andopt` spaces) `rand`
+          map (Comment . nepack) (nelist (noneCharOf "\r\n"))
 
-name : Parser (List NameToken)
-name = someTillFail (substituteNameToken <|> textNameToken) <?> "a name"
+eol : Parser' ()
+eol = cmap () $ char '\r' `optand` exactChar '\n'
 
-qualifiedName : Parser (List (List NameToken))
-qualifiedName = sepBy1 name $ char '.' <?> "a qualified name"
+eolWithSpaces : Parser' ()
+eolWithSpaces = cmap () $ nelist $ spaces `optand` eol
 
-
--- Value
-
-valueChar : Parser Char
-valueChar = requireFailure (string "${") *> noneOf "\r\n"
-
-textValueToken : Parser ValueToken
-textValueToken = TextValueToken <$> someCharsTillFail valueChar <?> "a static value"
-
-referenceValueToken : Parser ValueToken
-referenceValueToken = string "${" *> map ReferenceValueToken qualifiedName <* char '}' <?> "a reference"
-
-value : Parser (List ValueToken)
-value = manyTillFail $ textValueToken <|> referenceValueToken <?> "a value"
-
-
--- Config
-
-payload : Parser ConfigLine
-payload = (do
-    name <- qualifiedName
-    position <- getPosition
-    char '='
-    val <- value
-    pure $ Payload name val "" $ lineNo position) <?> "a key-value pair"
-
-comment : Parser ConfigLine
-comment = whiteSpace *> char '#' *> whiteSpace *>
-          Comment <$> someCharsTillFail (requireFailure endOfLineWithSpaces *> anyChar) <?> "a comment"
-
-export
-config : Parser (List ConfigLine)
-config = many endOfLineWithSpaces *> sepBy (comment <|> payload) (some endOfLineWithSpaces) <*
-         many endOfLineWithSpaces <* eof
+config : Parser' (List ConfigLine)
+config = map Data.NEList.toList $
+    (eolWithSpaces `roptand` sepBy (comment `alt` payload) eolWithSpaces) `landopt` eolWithSpaces

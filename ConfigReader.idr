@@ -2,7 +2,10 @@ module ConfigReader
 
 import ConfigData
 import ConfigParser
-import Lightyear.Strings
+import Data.NEList
+import NEListExtras
+import TParsec
+import TParsec.Running
 
 
 showLeft: Show a => Either a b -> Either String b
@@ -15,6 +18,10 @@ export
 (Left message) ?++ comment = Left $ comment ++ ": " ++ message
 right ?++ _ = right
 
+withMessage : Maybe a -> String -> Either String a
+withMessage Nothing message = Left message
+withMessage (Just x) _ = Right x
+
 withFile: String -> ConfigLine -> ConfigLine
 withFile _ c@(Comment _) = c
 withFile file (Payload name value _ line) = Payload name value file line
@@ -26,7 +33,7 @@ readConfigFromFile file = do
     content <- readFile file
     let inputProcessingResult = do
         content <- (showLeft content) ?++ "Error reading an input"
-        parseResult <- parse config content ?++ "Error parsing an input"
+        parseResult <- withMessage (parseMaybe content config) "Error parsing an input"
         pure parseResult
     case inputProcessingResult ?++ file of
         Left error => do

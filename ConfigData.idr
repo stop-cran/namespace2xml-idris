@@ -1,5 +1,8 @@
 module ConfigData
 
+import Data.NEList
+import NEListExtras
+
 %access public export
 
 
@@ -7,10 +10,10 @@ data NameToken = TextNameToken String | SubstituteNameToken
 
 data ValueToken : Type where
     TextValueToken : String -> ValueToken
-    ReferenceValueToken : List (List NameToken) -> ValueToken
+    ReferenceValueToken : NEList (NEList NameToken) -> ValueToken
 
 data ConfigLine : Type where
-    Payload : (name : List (List NameToken)) -> (value : List ValueToken) -> (file: String) -> (lineNo: Nat) -> ConfigLine
+    Payload : (name : NEList (NEList NameToken)) -> (value : List ValueToken) -> (file: String) -> (lineNo: Nat) -> ConfigLine
     Comment : String -> ConfigLine
 
 intercalate : String -> List String -> String
@@ -35,8 +38,8 @@ Eq ValueToken where
     (ReferenceValueToken x) == (ReferenceValueToken y) = x == y
     _ == _ = False
 
-formatName : List (List NameToken) -> String
-formatName l = intercalate "." $ map (intercalate "" . map show) l
+formatName : NEList (NEList NameToken) -> String
+formatName l = intercalate "." $ Data.NEList.toList $ map (intercalate "" . Data.NEList.toList . map show) l
 
 Show ValueToken where
     show (TextValueToken s) = s
